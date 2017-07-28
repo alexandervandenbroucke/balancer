@@ -2,13 +2,14 @@ module Balancer (
   Record(..),
   Transfer(..),
   prettyTransfers,
-  balance,
+  executeTransfer, executeTransfers,
+  balance, balanced, balancedEpsilon,
   aggregateRecords
 )
 where
 
 import Flow
-import Data.List (sort,intercalate)
+import Data.List (sort,intercalate, find, nubBy)
 import Control.Monad (forM_)
 import Data.Function (on)
 import Data.List (groupBy, sortBy)
@@ -30,6 +31,7 @@ data Transfer a =
   }
   deriving Show
 
+-- | Aggregate a list of records by payer.
 aggregateRecords :: Ord a => [Record a] -> [Record a]
 aggregateRecords records =
   let sorted = sortBy (compare `on` rec_payer) records
@@ -40,6 +42,29 @@ prettyTransfers :: [Transfer String] -> IO ()
 prettyTransfers transfers = do
   forM_ transfers $ \(MkTransfer from to amount) ->
     putStrLn (from ++ " -> " ++ to ++ ": " ++ show amount)
+
+-- | Execute a transfer, by modifying the appropriate records.
+executeTransfer :: Ord a => Transfer a -> [Record a] -> [Record a]
+executeTransfer (MkTransfer from to amount) records =
+  aggregateRecords (MkRecord from amount : MkRecord to (-amount) : records)
+
+-- | Execute a list of transfers.
+--   By calling 'executeTransfer' on each transfer in succession.
+executeTransfers :: Ord a => [Transfer a] -> [Record a] -> [Record a]
+executeTransfers transfers records = foldr executeTransfer records transfers
+
+-- | Check if a list of records is balanced (i.e. the amounts are identical).
+--   The list of records should not contain duplicate payers.
+balanced :: [Record a] -> Bool
+balanced records = length (nubBy ((==) `on` rec_amount) records) < 2
+
+-- | Check if a list of records is balanced up to a small epsilon.
+--   That is, the amounts differ by at most epsilon 
+--   The list of records should not contain duplicate payers.
+balancedEpsilon :: Double -> [Record a] -> Bool
+balancedEpsilon epsilon records =
+  let equiv d1 d2 = abs (d1 - d2) <= epsilon
+  in length (nubBy (equiv `on` rec_amount) records) < 2
 
 
 -- | Provide a set of transfers such that the accounts balance, that is, every

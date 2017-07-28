@@ -23,3 +23,10 @@ library
   hs-source-dirs:      src
   default-language:    Haskell2010
 
+Test-Suite balancer-tests
+  type:             exitcode-stdio-1.0
+  main-is:          balancer-tests.hs
+  build-depends:    base >= 4.8 && < 4.9,
+                    hspec
+  hs-source-dirs:   src, tests
+  default-language: Haskell2010
