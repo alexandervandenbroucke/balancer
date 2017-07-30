@@ -117,7 +117,8 @@ flowGraph records =
         -- than flow from an account to itself.
         [(mid, [MkVertex (getId mid + noRecords)]) | mid <- mids] ++
         -- the output vertices are connected to the sink vertex
-        [(out,[sink])                         | out <- outs]
+        [(out,[sink])                         | out <- outs] ++
+        [(sink,[])]
       capacity (MkEdge x y)
         | x == source && y /= sink   = perNode -- input flow capacity
         | y == sink   && x /= source =
@@ -127,7 +128,7 @@ flowGraph records =
             -- capacity from in to mid and out, and mid to out
             total + 1
         | otherwise = 0
-  in mkFlowGraph (MkGraph adjacencyList) capacity source sink
+  in mkFlowGraph (mkGraph adjacencyList) capacity source sink
 
 -- | The input vertex corresponding to the i-th record
 inVertex :: Int -> Int -> Vertex
