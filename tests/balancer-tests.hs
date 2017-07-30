@@ -34,8 +34,6 @@ main = hspec $ do
 
   describe "balance" $ do
     it "provides transfers that balance the records" $
-      let records = [MkRecord 1 200,
-                     MkRecord 2 700,
-                     MkRecord 3 400]
+      let records = [MkRecord 1 200, MkRecord 2 700, MkRecord 3 400]
       in executeTransfers (balance records) records
          `shouldSatisfy` balancedEpsilon 0.01

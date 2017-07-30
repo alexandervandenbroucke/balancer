@@ -1,12 +1,17 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Flow (
   Vertex(..),
   Edge(..), edge2pair,
-  Graph(..), vertices, edges,
+  Graph(..), mkGraph, vertices, edges,
   FlowGraph, mkFlowGraph, graph, flow, capacity, source, sink,
   maximalFlowGraph,
-  totalFlow
+  totalFlow,
+  -- * Internal stuff
+  shortestPath,
+  saturated,
+  residual
 )
 where
 
@@ -15,14 +20,25 @@ import           Data.Function (on)
 import qualified Data.List as L (minimumBy)
 import           Data.Maybe (isJust,fromJust,fromMaybe)
 import           Data.Ord (Down(Down))
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as M
+import qualified Data.Vector.Unboxed as U
+import           GHC.ST (ST)
 
 newtype Graph
   = MkGraph
     {
-      unGraph :: [(Vertex,[Vertex])]
+      unGraph :: V.Vector (U.Vector Int)
     }
+    deriving Show
 
-newtype Vertex = MkVertex { getId :: Int } deriving (Num,Eq,Ord,Show)
+newtype Vertex
+  = MkVertex
+    {
+      getId :: Int
+    }
+  deriving (Num,Eq,Ord,Show)
+
 data Edge
   = MkEdge
     {

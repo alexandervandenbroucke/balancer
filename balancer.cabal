@@ -16,7 +16,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Flow, Balancer
+  exposed-modules:     Balancer, Flow
   -- other-modules:       
   other-extensions:    GeneralizedNewtypeDeriving
   build-depends:       base >=4.8 && <4.9
@@ -27,6 +27,16 @@ Test-Suite balancer-tests
   type:             exitcode-stdio-1.0
   main-is:          balancer-tests.hs
   build-depends:    base >= 4.8 && < 4.9,
-                    hspec
+                    hspec,
+                    vector
+  hs-source-dirs:   src, tests
+  default-language: Haskell2010
+
+Test-Suite flow-tests
+  type:             exitcode-stdio-1.0
+  main-is:          flow-tests.hs
+  build-depends:    base >= 4.8 && < 4.9,
+                    hspec,
+                    vector
   hs-source-dirs:   src, tests
   default-language: Haskell2010
