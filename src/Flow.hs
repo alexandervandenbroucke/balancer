@@ -24,6 +24,7 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as M
 import qualified Data.Vector.Unboxed as U
 import           GHC.ST (ST)
+import qualified Data.Sequence as S
 
 newtype Graph
   = MkGraph
@@ -173,20 +174,28 @@ residual cap path fg =
 
 shortestPath :: Graph -> Vertex -> Vertex -> Maybe [Edge]
 shortestPath g start end = 
-  let unVisited0 = U.replicate (V.length (unGraph g)) True
-      go :: U.Vector Bool -> [Edge] -> Int -> Vertex -> Maybe ([Edge],Int) 
-      go unVisited path len start
-        | start == end = Just (path,len)
-        | otherwise =
-          let outV       = U.toList (unGraph g V.! getId start)
-              outs       = filter (\i -> unVisited U.! i) outV
-              unVisited' = unVisited U.// [(i,False) | i <- outs]
-              paths      =
-                [ go unVisited' (MkEdge start v:path) (len+1) v | i <- outs,
-                  let v = MkVertex i ]
-              cmp = compare `on` Down . fmap (Down . snd)
-          in join (minimumBy cmp paths)
-    in fmap (reverse . fst) (go unVisited0 [] 0 start)
+  let reverseEdge0 =
+        U.replicate (V.length (unGraph g)) (-1)
+        U.// [(getId start, getId start)]
+        -- -1 indicates unvisited
+      go :: S.Seq Vertex -> U.Vector Int -> U.Vector Int
+      go queue reverseEdge = case S.viewl queue of
+        S.EmptyL -> reverseEdge
+        vertex S.:< remaining | vertex == end -> reverseEdge
+        vertex S.:< remaining -> 
+          let outV         = U.toList (unGraph g V.! getId vertex)
+              outs         = filter (\i -> reverseEdge U.! i == -1) outV
+              reverseEdge' = reverseEdge U.// [(i,getId vertex) | i <- outs]
+              enqueue v queue' = queue' S.|> MkVertex v
+          in go (foldr enqueue remaining outs) reverseEdge'
+      getPath :: U.Vector Int -> Maybe [Edge]
+      getPath reverseEdge =
+        let getPath' v path = case reverseEdge U.! v of
+              -1         -> Nothing
+              u | u == v -> Just path
+              u -> getPath' u ((MkEdge (MkVertex u) (MkVertex v)):path)
+        in getPath' (getId end) []
+    in getPath (go (S.singleton start) reverseEdge0)
 
 minimumBy :: (a -> a -> Ordering) -> [a] -> Maybe a
 minimumBy cmp [] = Nothing
