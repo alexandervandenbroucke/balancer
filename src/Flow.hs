@@ -122,11 +122,11 @@ type Capacity = Edge -> Double
 data FlowGraph =
   MkFlowGraph
   {
-    graph    :: Graph,
+    graph    :: !Graph,
     flow     :: Flow,
     capacity :: Capacity,
-    source   :: Vertex,
-    sink     :: Vertex
+    source   :: !Vertex,
+    sink     :: !Vertex
   }
 
 mkFlowGraph :: Graph -> Capacity -> Vertex -> Vertex -> FlowGraph
@@ -172,18 +172,21 @@ residual cap path fg =
     in fg{flow = newFlow, capacity = newCapacity, graph = newGraph}
 
 shortestPath :: Graph -> Vertex -> Vertex -> Maybe [Edge]
-shortestPath g start end = fmap (reverse . fst) (go [] [] 0 start) where
-  go :: [Vertex] -> [Edge] -> Int -> Vertex -> Maybe ([Edge],Int) 
-  go visited path len start
-    | start == end = Just (path,len)
-    | otherwise =
-        let outE     = outgoing g start
-            outs     = filter (not . (`elem` visited) . rightV) outE
-            visited' = visited ++ map rightV outs
-            paths    =
-              [ go visited' (v:path) (len+1) (rightV v) | v <- outs ]
-            cmp = compare `on` Down . fmap (Down . snd)
-        in join (minimumBy cmp paths)
+shortestPath g start end = 
+  let unVisited0 = U.replicate (V.length (unGraph g)) True
+      go :: U.Vector Bool -> [Edge] -> Int -> Vertex -> Maybe ([Edge],Int) 
+      go unVisited path len start
+        | start == end = Just (path,len)
+        | otherwise =
+          let outV       = U.toList (unGraph g V.! getId start)
+              outs       = filter (\i -> unVisited U.! i) outV
+              unVisited' = unVisited U.// [(i,False) | i <- outs]
+              paths      =
+                [ go unVisited' (MkEdge start v:path) (len+1) v | i <- outs,
+                  let v = MkVertex i ]
+              cmp = compare `on` Down . fmap (Down . snd)
+          in join (minimumBy cmp paths)
+    in fmap (reverse . fst) (go unVisited0 [] 0 start)
 
 minimumBy :: (a -> a -> Ordering) -> [a] -> Maybe a
 minimumBy cmp [] = Nothing
