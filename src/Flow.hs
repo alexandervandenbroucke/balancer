@@ -74,11 +74,14 @@ filterEdges p =
   let pNeighbour u v = p (pair2edge (u,v))
   in MkGraph . V.imap (\v -> U.filter (pNeighbour v)) . unGraph
 
+-- | Add an Edge to the Graph.
+--   The vertices will be added if they do not yet exist.
 addEdge :: Edge -> Graph -> Graph
 addEdge e (MkGraph g) =
   let u  = leftV e
       v  = rightV e
-      padding = V.replicate (getId u + 1 - V.length g) U.empty
+      padLength = max (getId u) (getId v) + 1 - V.length g 
+      padding = V.replicate padLength U.empty
       g' = V.modify (addEdge' u v) (g V.++ padding)
   in MkGraph g'
 
@@ -88,6 +91,8 @@ addEdge' u v mvector = do
   let vs' = if U.elem (getId v) vs then vs else U.cons (getId v) vs
   M.unsafeWrite mvector (getId u) vs'
 
+-- | Add and Remove vertices simultanously.
+--   When adding or removing an edge (u,v), the vertex u should already exist.
 addAndRemoveEdges :: [Edge] -> [Edge] -> Graph -> Graph
 addAndRemoveEdges toAdd toRemove (MkGraph g) =
   let updates =
@@ -178,6 +183,7 @@ shortestPath g start end =
         U.replicate (V.length (unGraph g)) (-1)
         U.// [(getId start, getId start)]
         -- -1 indicates unvisited
+        -- the start node is already marked as visisted
       go :: S.Seq Vertex -> U.Vector Int -> U.Vector Int
       go queue reverseEdge = case S.viewl queue of
         S.EmptyL -> reverseEdge

@@ -32,6 +32,7 @@ data Transfer a =
   deriving Show
 
 -- | Aggregate a list of records by payer.
+--   In the returned list, all Records will have a unique payer.
 aggregateRecords :: Ord a => [Record a] -> [Record a]
 aggregateRecords records =
   let sorted = sortBy (compare `on` rec_payer) records
@@ -68,7 +69,7 @@ balancedEpsilon epsilon records =
 
 
 -- | Provide a set of transfers such that the accounts balance, that is, every
---   payer pays the same amount.
+--   payer pays the same amount. Note: every Record must have a unique payer.
 balance :: Ord a => [Record a] -> [Transfer a]
 balance records =
   let fg   = maximalFlowGraph (flowGraph records)
