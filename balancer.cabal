@@ -19,7 +19,7 @@ library
   exposed-modules:     Balancer, Flow
   -- other-modules:       
   other-extensions:    GeneralizedNewtypeDeriving
-  build-depends:       base >=4.8 && <4.9,
+  build-depends:       base >=4.8 && <4.10,
                        vector,
                        containers
   hs-source-dirs:      src
@@ -29,29 +29,25 @@ library
 Test-Suite balancer-tests
   type:             exitcode-stdio-1.0
   main-is:          balancer-tests.hs
-  build-depends:    base >= 4.8 && < 4.9,
+  build-depends:    base >= 4.8 && < 4.10,
                     hspec,
-                    vector,
-                    containers
-  hs-source-dirs:   src, tests
+                    balancer >= 0.1
+  hs-source-dirs:   tests
   default-language: Haskell2010
 
 Test-Suite flow-tests
   type:             exitcode-stdio-1.0
   main-is:          flow-tests.hs
-  build-depends:    base >= 4.8 && < 4.9,
+  build-depends:    base >= 4.8 && < 4.10,
                     hspec,
-                    vector,
-                    containers
-  hs-source-dirs:   src, tests
+                    balancer >= 0.1
+  hs-source-dirs:   tests
   default-language: Haskell2010
 
 executable balancer-example
   main-is:          balancer-example.hs
-  other-modules:    Balancer, Flow
-  build-depends:    base >= 4.8 && < 4.9,
-                    vector,
-                    containers
-  hs-source-dirs:   src
+  build-depends:    base >= 4.8 && < 4.10,
+                    balancer >= 0.1
+  hs-source-dirs:   example
   default-language: Haskell2010
   ghc-options:      -O2
