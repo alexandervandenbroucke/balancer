@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 module Balancer (
   Record(..),
   Transfer(..),
@@ -20,7 +21,7 @@ data Record a =
     rec_payer  :: a,
     rec_amount :: Double
   }
-  deriving (Show,Eq,Ord)
+  deriving (Functor,Show,Eq,Ord)
 
 data Transfer a =
   MkTransfer
@@ -29,7 +30,7 @@ data Transfer a =
     trans_to     :: a,
     trans_amount :: Double
   }
-  deriving Show
+  deriving (Functor,Show)
 
 -- | Aggregate a list of records by payer.
 --   In the returned list, all Records will have a unique payer.
