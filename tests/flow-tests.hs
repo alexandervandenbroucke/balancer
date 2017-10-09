@@ -1,6 +1,6 @@
 import Test.Hspec
 import Flow (
-  Edge(MkEdge),
+  Edge(MkEdge), reverseE,
   Vertex(),
   mkGraph,
   mkFlowGraph,
@@ -19,10 +19,16 @@ main = hspec $ do
       in sort (edges (graph fg))
          `shouldBe`
          [MkEdge 0 1, MkEdge 2 0]
+
   describe "shortestPath" $ do
     it "finds the shortest path between two nodes." $
       let g = mkGraph [(0,[1,2]),(1,[2]),(2,[3]),(3,[])]
-      in shortestPath g 0 3 `shouldBe` Just [MkEdge 0 2, MkEdge 2 3]
+          cap e | e          `elem` edges g = 1
+                | reverseE e `elem` edges g = -1
+                | otherwise                 = 0
+          fg = mkFlowGraph g cap 0 3
+      in shortestPath fg 0 3 `shouldBe` Just [MkEdge 0 2, MkEdge 2 3]
+
   describe "saturated" $ do
     it "finds a saturated edge in a flowgraph" $
       let g = mkGraph [(0,[1,2]),(1,[2]),(2,[3]),(3,[])]

@@ -245,6 +245,8 @@ outgoing g u =
 --
 -- /Flow-preservation/: @sum_{vertex v} f(v,u) = 0@ (for all vertices u /= s,t)
 --
+-- The capacity should also satisfy Skey-symmetry.
+-- 
 -- Flow graphs can be created with 'mkFlowGraph'
 
 type Flow     = Edge -> Double
@@ -259,8 +261,9 @@ data FlowGraph =
   {
     graph    :: !Graph,
       -- ^ Directed graph of a 'FlowGraph'
-    flow     :: Flow,
-      -- ^ Flow function of a 'FlowGraph'
+    available :: Capacity,
+      -- ^ Available capacity of a 'FlowGraph'
+      --   This is the difference between capacity and flow
     capacity :: Capacity,
       -- ^ Capacity function of a 'FlowGraph'
     source   :: !Vertex,
@@ -282,8 +285,8 @@ mkFlowGraph graph' capacity' source' sink =
       maxCapacity = sum $ map capacity' $ outgoing graph' source'
       capacity e | sourceV e == source = 1 + maxCapacity
                  | otherwise           = capacity' e
-      flow = const 0
-  in MkFlowGraph graph flow capacity source sink
+      available = capacity
+  in MkFlowGraph graph available capacity source sink
 
 -- | Compute the total (current) flow in the 'FlowGraph'.
 --
@@ -291,6 +294,9 @@ mkFlowGraph graph' capacity' source' sink =
 totalFlow :: FlowGraph -> Double
 totalFlow fg = sum $ map (flow fg) $ outgoing (graph fg) (source fg)
 
+-- | The flow on an edge of a flow graph.
+flow :: FlowGraph -> Edge -> Double
+flow fg e = capacity fg e - available fg e
 
 -------------------------------------------------------------------------------
 -- Maximal flow computation.
@@ -324,45 +330,40 @@ maximalFlowGraph fg = case saturated fg of
 --   otherwise it returns @Nothing@.
 saturated :: FlowGraph -> Maybe (Double,[Edge])
 saturated fg = do
-  let g = graph fg
-  path           <- shortestPath g (source fg) (sink fg)
-  capacityOnPath <- minimumBy compare (map (capacity fg) path)
+  path           <- shortestPath fg (source fg) (sink fg)
+  capacityOnPath <- minimumBy compare (map (available fg) path)
   return (capacityOnPath,path)
 
 -- | Find the residual flow graph of a given flow graph.
 --
 --   For a given amount of flow and a path, the residual flow graph is
 --   obtained by adding the given amount of flow to each edge along the path,
---   and substract the amount from the capacity (the amount is added to the
---   capacity in the reverse direction).
---
---   The flow can thus exceed the capacity in the residual graph, but not in
---   the original graph.
+--   and substract the amount from the flow from the edge in the reverse
+--   direction.
 residual :: Double -> [Edge] -> FlowGraph -> FlowGraph
-residual cap path fg =
+residual amount path fg =
     let pathR = map reverseE path
-        newCapacity e | e `elem` path  = capacity fg e - cap
-                      | e `elem` pathR = capacity fg e + cap
-                      | otherwise      = capacity fg e
-
-        newFlow     e | e `elem` path = flow fg e + cap
-                      | otherwise     = flow fg e
+        newAvailable e
+          | e `elem` path  = available fg e - amount
+          | e `elem` pathR = min (available fg e + amount) (capacity fg e)
+          | otherwise      = available fg e
         toAdd = pathR
-        toRemove = filter (\e -> newCapacity e <= 0) path
+        toRemove = filter (\e -> newAvailable e <= 0) path
         newGraph = addAndRemoveEdges toAdd toRemove (graph fg)
-    in fg{flow = newFlow, capacity = newCapacity, graph = newGraph}
--- TODO: currently, newFlow and newCapacity are defined in terms of the
--- original flow. This is undesireable, as it leads to lookups that are linear
+    in fg{graph = newGraph, available = newAvailable}
+-- TODO: currently, newAvailable is defined in terms of the original available.
+-- This is undesireable, as it leads to lookups that are linear
 -- in the number of iterations. Proposed solution: replace with Map or attach
 -- flow to vertices directly.
 
--- | Find the shortest path in a graph from a given start vertex and end
---   vertex.
+-- | Find the shortest path in a flow graph @fg@ from a given start vertex and
+--   end vertex, only edges @e@ s.t. @flow fg e < cap fg e@ are considered
 --
---   Uses BFS, hence O(E + V) amortized. 
-shortestPath :: Graph -> Vertex -> Vertex -> Maybe [Edge]
-shortestPath g start end = 
-  let reverseEdge0 =
+--   Uses BFS, hence O(E + V) amortized.
+shortestPath :: FlowGraph -> Vertex -> Vertex -> Maybe [Edge]
+shortestPath fg start end = 
+  let g = graph fg
+      reverseEdge0 =
         U.replicate (V.length (unGraph g)) (-1)
         U.// [(getId start, getId start)]
         -- -1 indicates unvisited
@@ -373,7 +374,8 @@ shortestPath g start end =
         vertex S.:< remaining | vertex == end -> reverseEdge
         vertex S.:< remaining -> 
           let outV         = U.toList (unGraph g V.! getId vertex)
-              outs         = filter (\i -> reverseEdge U.! i == -1) outV
+              unVisisted i = reverseEdge U.! i == -1
+              outs         = filter unVisisted outV
               reverseEdge' = reverseEdge U.// [(i,getId vertex) | i <- outs]
               enqueue v queue' = queue' S.|> MkVertex v
           in go (foldr enqueue remaining outs) reverseEdge'
