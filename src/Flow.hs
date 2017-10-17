@@ -40,7 +40,7 @@ where
 
 import           Control.Monad (join)
 import           Data.Function (on)
-import qualified Data.List as L (minimumBy)
+import qualified Data.List as L (minimumBy,partition)
 import           Data.Maybe (isJust,fromJust,fromMaybe)
 import           Data.Ord (Down(Down))
 import qualified Data.Vector as V
@@ -110,10 +110,12 @@ data Edge
 --
 --   Note: it is /not/ recommended to use the constructor @MkGraph@ directly.
 --   Instead, use 'mkGraph'.
+--
+--   The datastructure also keeps a weight along the edge.
 newtype Graph
   = MkGraph
     {
-      unGraph :: V.Vector (U.Vector Int)
+      unGraph :: V.Vector (U.Vector (Int,Double))
     }
     deriving Show
 
@@ -136,7 +138,8 @@ size = V.length . unGraph
 --   [0..(n-1)].
 mkGraph :: [(Vertex,[Vertex])] -> Graph
 mkGraph adjList =
-  let adjList' = map (\(v,vs) -> (getId v,U.fromList (map getId vs))) adjList
+  let adjList' =
+        [( getId v, U.fromList [(getId v,0) | v <- vs] ) | (v,vs) <- adjList]
       initVector = V.replicate (length adjList') U.empty
       g = V.accum (\_ vs -> vs) initVector adjList'
   in MkGraph g
@@ -154,17 +157,18 @@ edges = edges' . unGraph
 
 -- | Get all the edges in a graph, working directly on the adjacency list
 --   representation.
-edges' :: V.Vector (U.Vector Int) -> [Edge]
+edges' :: V.Vector (U.Vector (Int,Double)) -> [Edge]
 edges' vector =
   let ixs = V.toList (V.indexed vector)
-  in concatMap (\(v,vs) -> map (\i -> pair2edge (v,i)) (U.toList vs))  ixs
+      adjList2edges (v,adjs) = [pair2edge (v, i) | (i,_) <- U.toList adjs]
+  in concatMap adjList2edges ixs
 
 -- | Retain only edges that satisfy a condition.
 --
 --   The vertices will remain!
 filterEdges :: (Edge -> Bool) -> Graph -> Graph
 filterEdges p =
-  let pNeighbour u v = p (pair2edge (u,v))
+  let pNeighbour u (v,_) = p (pair2edge (u,v))
   in MkGraph . V.imap (\v -> U.filter (pNeighbour v)) . unGraph
 
 -- | Add an Edge to the Graph.
@@ -175,33 +179,36 @@ addEdge e (MkGraph g) =
       v  = targetV e
       padLength = max (getId u) (getId v) + 1 - V.length g 
       padding = V.replicate padLength U.empty
-      g' = V.modify (addEdge' u v) (g V.++ padding)
+      g' = V.modify (addEdge' u v 0) (g V.++ padding)
   in MkGraph g'
 
 -- | Add an edge between to given nodes to the graph.
---   The source edge must already exist in the graph!
+--   The source vertex must already exist in the graph!
 --   Adding an edge with a non-existent source edge leads to undefined
 --   behaviour.
-addEdge' :: Vertex -> Vertex -> V.MVector s (U.Vector Int) -> ST s ()
-addEdge' u v mvector = do
+addEdge' :: Vertex -> Vertex -> Double
+         -> V.MVector s (U.Vector (Int,Double))
+         -> ST s ()
+addEdge' u v c mvector = do
   vs <- M.unsafeRead mvector (getId u)
-  let vs' = if U.elem (getId v) vs then vs else U.cons (getId v) vs
+  let vs' = case U.findIndex ((== getId v) . fst) vs of
+        Just i  -> vs U.// [(i,(getId v,c))]
+        Nothing -> U.cons (getId v,c) vs
   M.unsafeWrite mvector (getId u) vs'
 
--- | Add and Remove vertices simultanously.
+-- | Add and Remove edges (and their capacity along it) simultanously.
 --   When adding or removing an edge (u,v), the vertex u should already exist.
-addAndRemoveEdges :: [Edge] -> [Edge] -> Graph -> Graph
+addAndRemoveEdges :: [(Double,Edge)] -> [Edge] -> Graph -> Graph
 addAndRemoveEdges toAdd toRemove (MkGraph g) =
   let updates =
-         [(getId u, addVertex v) | MkEdge u v <- toAdd]
+         [(getId u, addVertex v c) | (c,MkEdge u v) <- toAdd]
          ++
          [(getId u, removeVertex v) | MkEdge u v <- toRemove]
-      addVertex v vs =
-        if U.elem (getId v) vs then
-          vs
-        else
-          U.cons (getId v) vs
-      removeVertex v vs = U.filter (/= getId v) vs
+      addVertex v c vs =
+        case U.findIndex ((getId v ==) . fst) vs of
+          Just i  -> vs U.// [(i,(getId v,c))]
+          Nothing -> U.cons (getId v,c) vs
+      removeVertex v vs = U.filter ((getId v /=) . fst) vs
   in MkGraph (V.accum (\vs f -> f vs) g updates)
 
 -- | Reverse an edge.
@@ -226,7 +233,25 @@ pair2edge (u,v) = (MkEdge (MkVertex u) (MkVertex v))
 outgoing :: Graph -> Vertex -> [Edge]
 outgoing g u =
   let vs = unGraph g V.! getId u
-  in map (\v -> pair2edge (getId u,v)) (U.toList vs)
+  in map (\(v,_) -> pair2edge (getId u,v)) (U.toList vs)
+
+-- | Set the weights on all edges in the graph.
+--
+--   The weights are determined by the correspondig value of the supplied
+--   function.
+setWeights :: (Edge -> Double) -> Graph -> Graph
+setWeights weight (MkGraph g) = 
+  let g' = V.imap (\i adj -> U.map (setAdjWeight i . fst) adj) g
+      setAdjWeight u v = (v,weight (pair2edge (u,v)))
+  in MkGraph g'
+
+-- | Get the weight of an 'Edge', if the edge exists.
+getWeight :: Edge -> Graph -> Maybe Double
+getWeight (MkEdge u v) g = do
+  adj   <- unGraph g V.!? getId u
+  (_,c) <- U.find ((getId v ==) . fst) adj
+  return c
+
 
 -------------------------------------------------------------------------------
 -- Flow Graph
@@ -245,7 +270,7 @@ outgoing g u =
 --
 -- /Flow-preservation/: @sum_{vertex v} f(v,u) = 0@ (for all vertices u /= s,t)
 --
--- The capacity should also satisfy Skey-symmetry.
+-- The capacity should also satisfy Skew-symmetry.
 -- 
 -- Flow graphs can be created with 'mkFlowGraph'
 
@@ -261,9 +286,6 @@ data FlowGraph =
   {
     graph    :: !Graph,
       -- ^ Directed graph of a 'FlowGraph'
-    available :: Capacity,
-      -- ^ Available capacity of a 'FlowGraph'
-      --   This is the difference between capacity and flow
     capacity :: Capacity,
       -- ^ Capacity function of a 'FlowGraph'
     source   :: !Vertex,
@@ -271,6 +293,7 @@ data FlowGraph =
     sink     :: !Vertex
       -- ^ Sink vertex of a 'FlowGraph'
   }
+
 
 -- | Create a flow graph.
 --
@@ -285,8 +308,8 @@ mkFlowGraph graph' capacity' source' sink =
       maxCapacity = sum $ map capacity' $ outgoing graph' source'
       capacity e | sourceV e == source = 1 + maxCapacity
                  | otherwise           = capacity' e
-      available = capacity
-  in MkFlowGraph graph available capacity source sink
+      capacityGraph = setWeights capacity graph
+  in MkFlowGraph capacityGraph capacity source sink
 
 -- | Compute the total (current) flow in the 'FlowGraph'.
 --
@@ -295,8 +318,14 @@ totalFlow :: FlowGraph -> Double
 totalFlow fg = sum $ map (flow fg) $ outgoing (graph fg) (source fg)
 
 -- | The flow on an edge of a flow graph.
-flow :: FlowGraph -> Edge -> Double
+flow :: FlowGraph -> Flow
 flow fg e = capacity fg e - available fg e
+
+-- | Available capacity of a 'FlowGraph'
+--   This is the difference between capacity and flow
+available :: FlowGraph -> Capacity
+available fg e = fromMaybe 0 (getWeight e (graph fg))
+
 
 -------------------------------------------------------------------------------
 -- Maximal flow computation.
@@ -343,18 +372,18 @@ saturated fg = do
 residual :: Double -> [Edge] -> FlowGraph -> FlowGraph
 residual amount path fg =
     let pathR = map reverseE path
-        newAvailable e
-          | e `elem` path  = available fg e - amount
-          | e `elem` pathR = min (available fg e + amount) (capacity fg e)
-          | otherwise      = available fg e
-        toAdd = pathR
-        toRemove = filter (\e -> newAvailable e <= 0) path
-        newGraph = addAndRemoveEdges toAdd toRemove (graph fg)
-    in fg{graph = newGraph, available = newAvailable}
--- TODO: currently, newAvailable is defined in terms of the original available.
--- This is undesireable, as it leads to lookups that are linear
--- in the number of iterations. Proposed solution: replace with Map or attach
--- flow to vertices directly.
+        --
+        newAvailable  e = available fg e - amount
+        newAvailableR e = min (available fg e + amount) (capacity fg e)
+        --
+        (toAdd,toRemove) =
+          let (toAdd',toRemove') = 
+                L.partition ((> 0) . fst) [(newAvailable e,e) | e <- path]
+          in (toAdd', map snd toRemove')
+        toAddR = map (\e -> (newAvailableR e,e)) pathR
+        --
+        newGraph = addAndRemoveEdges (toAdd ++ toAddR) toRemove (graph fg)
+    in fg{graph = newGraph}
 
 -- | Find the shortest path in a flow graph @fg@ from a given start vertex and
 --   end vertex, only edges @e@ s.t. @flow fg e < cap fg e@ are considered
@@ -373,7 +402,7 @@ shortestPath fg start end =
         S.EmptyL -> reverseEdge
         vertex S.:< remaining | vertex == end -> reverseEdge
         vertex S.:< remaining -> 
-          let outV         = U.toList (unGraph g V.! getId vertex)
+          let outV         = map fst (U.toList (unGraph g V.! getId vertex))
               unVisisted i = reverseEdge U.! i == -1
               outs         = filter unVisisted outV
               reverseEdge' = reverseEdge U.// [(i,getId vertex) | i <- outs]
