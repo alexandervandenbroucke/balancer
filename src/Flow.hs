@@ -374,7 +374,7 @@ residual amount path fg =
     let pathR = map reverseE path
         --
         newAvailable  e = available fg e - amount
-        newAvailableR e = min (available fg e + amount) (capacity fg e)
+        newAvailableR e = available fg e + amount
         --
         (toAdd,toRemove) =
           let (toAdd',toRemove') = 
@@ -400,12 +400,12 @@ shortestPath fg start end =
       go :: S.Seq Vertex -> U.Vector Int -> U.Vector Int
       go queue reverseEdge = case S.viewl queue of
         S.EmptyL -> reverseEdge
-        vertex S.:< remaining | vertex == end -> reverseEdge
-        vertex S.:< remaining -> 
-          let outV         = map fst (U.toList (unGraph g V.! getId vertex))
+        from S.:< remaining | from == end -> reverseEdge
+        from S.:< remaining -> 
+          let outV         = map fst (U.toList (unGraph g V.! getId from))
               unVisisted i = reverseEdge U.! i == -1
               outs         = filter unVisisted outV
-              reverseEdge' = reverseEdge U.// [(i,getId vertex) | i <- outs]
+              reverseEdge' = reverseEdge U.// [(i,getId from) | i <- outs]
               enqueue v queue' = queue' S.|> MkVertex v
           in go (foldr enqueue remaining outs) reverseEdge'
       getPath :: U.Vector Int -> Maybe [Edge]
@@ -413,7 +413,7 @@ shortestPath fg start end =
         let getPath' v path = case reverseEdge U.! v of
               -1         -> Nothing
               u | u == v -> Just path
-              u -> getPath' u ((MkEdge (MkVertex u) (MkVertex v)):path)
+              u          -> getPath' u (pair2edge (u, v):path)
         in getPath' (getId end) []
     in getPath (go (S.singleton start) reverseEdge0)
 
