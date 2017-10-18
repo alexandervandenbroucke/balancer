@@ -7,7 +7,9 @@ import Flow (
   capacity, saturated,
   edges,
   graph,
-  shortestPath)
+  shortestPath,
+  maximalFlowGraph,
+  totalFlow)
 import Data.List (sort)
 
 main :: IO ()
@@ -37,3 +39,23 @@ main = hspec $ do
           fg = mkFlowGraph g cap 0 3
       in saturated fg `shouldBe` Just (20,[MkEdge 4 0, MkEdge 0 2, MkEdge 2 3])
           
+  describe "max-flow" $ do
+    it "finds the correct maximal flow" $
+      let g = mkGraph [
+            (0,[1,2,5]),(1,[2,3]),(2,[1,7]),(3,[4]),(4,[7]),
+            (5,[6]),(6,[2]),(7,[])]
+          cap (MkEdge x y) = case (x, y) of
+            (0,1) -> 5
+            (0,2) -> 10
+            (0,5) -> 15
+            (1,2) -> 5
+            (1,3) -> 15
+            (2,1) -> 10
+            (2,7) -> 15
+            (3,4) -> 15
+            (4,7) -> 15
+            (5,6) -> 15
+            (6,2) -> 15
+            _     -> 0
+          fg = mkFlowGraph g cap 0 7
+      in totalFlow (maximalFlowGraph fg) `shouldBe` 30
