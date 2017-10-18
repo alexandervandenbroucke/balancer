@@ -39,15 +39,16 @@ module Flow (
 where
 
 import           Control.Monad (join)
+import           Data.Bifunctor (second)
 import           Data.Function (on)
 import qualified Data.List as L (minimumBy,partition)
 import           Data.Maybe (isJust,fromJust,fromMaybe)
 import           Data.Ord (Down(Down))
+import qualified Data.Sequence as S
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as M
 import qualified Data.Vector.Unboxed as U
 import           GHC.ST (ST)
-import qualified Data.Sequence as S
 
 {- $example
 Consider the following example:
@@ -372,15 +373,10 @@ saturated fg = do
 residual :: Double -> [Edge] -> FlowGraph -> FlowGraph
 residual amount path fg =
     let pathR = map reverseE path
-        --
-        newAvailable  e = available fg e - amount
-        newAvailableR e = available fg e + amount
-        --
         (toAdd,toRemove) =
-          let (toAdd',toRemove') = 
-                L.partition ((> 0) . fst) [(newAvailable e,e) | e <- path]
-          in (toAdd', map snd toRemove')
-        toAddR = map (\e -> (newAvailableR e,e)) pathR
+          let availablePath = [(available fg e - amount,e) | e <- path]
+          in second (map snd) (L.partition ((> 0) . fst) availablePath)
+        toAddR = [ (available fg e + amount,e) | e <- pathR]
         --
         newGraph = addAndRemoveEdges (toAdd ++ toAddR) toRemove (graph fg)
     in fg{graph = newGraph}
