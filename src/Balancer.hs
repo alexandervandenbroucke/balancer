@@ -10,7 +10,7 @@ module Balancer (
 where
 
 import Flow
-import Data.List (sort,intercalate, find, nubBy)
+import Data.List (sort)
 import Control.Monad (forM_)
 import Data.Function (on)
 import Data.List (groupBy, sortBy)
@@ -58,15 +58,17 @@ executeTransfers transfers records = foldr executeTransfer records transfers
 -- | Check if a list of records is balanced (i.e. the amounts are identical).
 --   The list of records should not contain duplicate payers.
 balanced :: [Record a] -> Bool
-balanced records = length (nubBy ((==) `on` rec_amount) records) < 2
+balanced records =
+  let amounts = map rec_amount records
+  in maximum amounts == minimum amounts
 
 -- | Check if a list of records is balanced up to a small epsilon.
 --   That is, the amounts differ by at most epsilon 
 --   The list of records should not contain duplicate payers.
 balancedEpsilon :: Double -> [Record a] -> Bool
-balancedEpsilon epsilon records =
-  let equiv d1 d2 = abs (d1 - d2) <= epsilon
-  in length (nubBy (equiv `on` rec_amount) records) < 2
+balancedEpsilon epsilon records = 
+  let amounts = map rec_amount records
+  in (maximum amounts - minimum amounts) < epsilon
 
 
 -- | Provide a set of transfers such that the accounts balance, that is, every
