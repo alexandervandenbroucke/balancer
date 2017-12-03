@@ -1,75 +1,18 @@
-{-# LANGUAGE DeriveFunctor #-}
 module Balancer (
   Expense(..),
   Transfer(..),
-  prettyTransfers,
-  executeTransfer, executeTransfers,
-  balance, balanced, balancedEpsilon,
-  aggregateExpenses
+  balance
 )
 where
 
-import Flow
 import Data.List (sort)
-import Control.Monad (forM_)
-import Data.Function (on)
-import Data.List (groupBy, sortBy)
 
-data Expense a =
-  MkExpense
-  {
-    exp_payer  :: a,
-    exp_amount :: Double
-  }
-  deriving (Functor,Show,Eq,Ord)
-
-data Transfer a =
-  MkTransfer
-  {
-    trans_from   :: a,
-    trans_to     :: a,
-    trans_amount :: Double
-  }
-  deriving (Functor,Show)
-
--- | Aggregate a list of expenses by payer.
---   In the returned list, all Expenses will have a unique payer.
-aggregateExpenses :: Ord a => [Expense a] -> [Expense a]
-aggregateExpenses expenses =
-  let sorted = sortBy (compare `on` exp_payer) expenses
-      grouped = groupBy ((==) `on` exp_payer) sorted
-  in [MkExpense (exp_payer (head l)) (sum (map exp_amount l)) | l <- grouped]
-
-prettyTransfers :: [Transfer String] -> IO ()
-prettyTransfers transfers = do
-  forM_ transfers $ \(MkTransfer from to amount) ->
-    putStrLn (from ++ " -> " ++ to ++ ": " ++ show amount)
-
--- | Execute a transfer, by modifying the appropriate expenses.
-executeTransfer :: Ord a => Transfer a -> [Expense a] -> [Expense a]
-executeTransfer (MkTransfer from to amount) expenses =
-  aggregateExpenses (MkExpense from amount : MkExpense to (-amount) : expenses)
-
--- | Execute a list of transfers.
---   By calling 'executeTransfer' on each transfer in succession.
-executeTransfers :: Ord a => [Transfer a] -> [Expense a] -> [Expense a]
-executeTransfers transfers expenses = foldr executeTransfer expenses transfers
-
--- | Check if a list of expenses is balanced (i.e. the amounts are identical).
---   The list of expenses should not contain duplicate payers.
-balanced :: [Expense a] -> Bool
-balanced expenses =
-  let amounts = map exp_amount expenses
-  in maximum amounts == minimum amounts
-
--- | Check if a list of expenses is balanced up to a small epsilon.
---   That is, the amounts differ by at most epsilon 
---   The list of expenses should not contain duplicate payers.
-balancedEpsilon :: Double -> [Expense a] -> Bool
-balancedEpsilon epsilon expenses = 
-  let amounts = map exp_amount expenses
-  in (maximum amounts - minimum amounts) < epsilon
-
+import Flow (FlowGraph, Edge(MkEdge), Vertex(MkVertex),
+             mkGraph, mkFlowGraph, maximalFlowGraph, graph,
+             getId, edges, flow)
+import Types (Expense(MkExpense,exp_payer,exp_amount),
+              Transfer(MkTransfer),trans_amount)
+import qualified Flow as F
 
 -- | Provide a set of transfers such that the accounts balance, that is, every
 --   payer pays the same amount. Note: every Expense must have a unique payer.
@@ -136,7 +79,7 @@ flowGraph expenses =
 
 -- | The input vertex corresponding to the i-th record
 inVertex :: Int -> Int -> Vertex
-inVertex noExpenses i = MkVertex (1 + i)
+inVertex _noExpenses i = MkVertex (1 + i)
 
 -- | The input vertex corresponding to the i-th record
 midVertex :: Int -> Int -> Vertex
@@ -164,9 +107,9 @@ decode noExpenses (MkEdge u v) =
 -- | Debug pretty printing of a FlowGraph
 debug :: Int -> FlowGraph -> Edge -> String
 debug n flowG e@(MkEdge u v) =
-  decode n e              ++ " " ++
-  show (flow     flowG e) ++ "/" ++
-  show (capacity flowG e)
+  decode n e                ++ " " ++
+  show (flow       flowG e) ++ "/" ++
+  show (F.capacity flowG e)
 
 -- | Debug printing
 test :: [Expense a] -> IO ()

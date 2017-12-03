@@ -16,7 +16,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Balancer, Flow
+  exposed-modules:     Balancer, Flow, Greedy, Types
   -- other-modules:       
   other-extensions:    GeneralizedNewtypeDeriving
   build-depends:       base >=4.8 && <4.10,
