@@ -24,18 +24,18 @@ newtype Delta a
     }
   deriving (Functor, Eq, Ord, Show, Transferable a)
 
--- | Create a Delta directly from a payer and  an amount.
-mkDelta :: a -> Double -> Delta a
-mkDelta payer amount = MkDelta (MkExpense payer amount)
+-- | Create a Delta from an 'Expense' given the total average expenses.
+fromExpense :: Double -> Expense a -> Delta a
+fromExpense avg (MkExpense payer amount) =
+  MkDelta (MkExpense payer (amount - avg))
 
--- | Get the amount in the 'Delta.
+-- | Get the amount in the 'Delta'.
 deltaAmount :: Delta a -> Double
 deltaAmount = exp_amount . unDelta
 
-createTransfer :: Delta a -> Delta a -> Transfer a
-createTransfer (MkDelta expense1) (MkDelta expense2) =
-  let amount = min (abs (exp_amount expense1)) (abs (exp_amount expense2))
-  in MkTransfer (exp_payer expense2) (exp_payer expense1) amount
+-- | Get the account in the 'Delta'.
+deltaAccount :: Delta a -> a
+deltaAccount = exp_payer . unDelta
 
 -- | Convert a list of expenses to a list of deltas.
 -- For every expense the corresponding delta amount is the difference of the
@@ -45,8 +45,9 @@ toDeltas expenses =
   let n     = length expenses
       total = sum (map exp_amount expenses)
       avg   = total / fromIntegral n
-  in [mkDelta payer (amount-avg) | MkExpense payer amount <- expenses]
-    
+  in map (fromExpense avg) expenses
+
+
 -------------------------------------------------------------------------------
 -- Greedy Balancing algorithm
 
@@ -85,6 +86,7 @@ toDeltas expenses =
 -- and apply regular @e@-balance, that is, a list of expenses @E@ is
 -- @e@-balanced iff @[e' - avg E | e' <- E]@ is @e@-balanced.
 
+
 -- | Create a list of transfers to e-balance a list of deltas.
 -- Given a list of deltas (where every payer must be unique), create a list
 -- of transfers, such that the result of applying those transfers to the deltas
@@ -96,8 +98,16 @@ balanceDelta deltas epsilon =
   in if (deltaAmount payee - deltaAmount payer) < epsilon then
        []
      else
-       let t = createTransfer payee payer
-       in t:balanceDelta (map (executeTransfer t) deltas) epsilon
+       let amount = min (abs (deltaAmount payee)) (abs (deltaAmount payee))
+           transfer =
+             MkTransfer
+             {
+               trans_from   = deltaAccount payer,
+               trans_to     = deltaAccount payee,
+               trans_amount = amount
+             }
+           newDeltas = map (executeTransfer transfer) deltas
+       in transfer:balanceDelta newDeltas epsilon
 
 -- | Create a list of transfers to e-balance a list of expenses.
 -- Given a list of expenses (where every payer must be unique), create a list
