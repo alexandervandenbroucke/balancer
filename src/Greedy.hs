@@ -1,7 +1,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE BangPatterns #-}
-{- | Greedy algorithm for balancing a list of expenses.
--}
+{-# LANGUAGE MultiWayIf #-}
+
+{- | Greedy algorithm for balancing a list of expenses. -}
+
 module Greedy (
   -- * Greedy Algorithm
   -- $theory
@@ -12,12 +14,18 @@ import Types (
   Transfer(MkTransfer, trans_from, trans_to, trans_amount),
   Transferable(executeTransfer))
 
-import Data.List (minimumBy,maximumBy)
-import Data.Function (on)
+import           Control.Monad.ST
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as MV
 
 -------------------------------------------------------------------------------
 -- Delta
 
+-- | Relative Expenses
+-- A 'Delta' is a wrappper datatype around 'Expense'. It indicates the switch
+-- from absolute expenses (modelled by 'Expense') to relative expenses with
+-- respect to the average expenses (total expenses divided by the number of
+-- people).
 newtype Delta a
   = MkDelta
     {
@@ -25,7 +33,8 @@ newtype Delta a
     }
   deriving (Functor, Eq, Ord, Show, Transferable a)
 
--- | Create a Delta from an 'Expense' given the total average expenses.
+-- | Turn an absolute 'Expense' into a relative 'Delta' given the total
+-- average expenses.
 fromExpense :: Double -> Expense a -> Delta a
 fromExpense avg (MkExpense payer amount) =
   MkDelta (MkExpense payer (amount - avg))
@@ -33,20 +42,22 @@ fromExpense avg (MkExpense payer amount) =
 -- | Get the amount in the 'Delta'.
 deltaAmount :: Delta a -> Double
 deltaAmount = exp_amount . unDelta
+{-# INLINEABLE deltaAmount #-}
 
 -- | Get the account in the 'Delta'.
 deltaAccount :: Delta a -> a
 deltaAccount = exp_payer . unDelta
+{-# INLINEABLE deltaAccount #-}
 
 -- | Convert a list of expenses to a list of deltas.
 -- For every expense the corresponding delta amount is the difference of the
 -- expense to the average expense of the whole list.
-toDeltas :: [Expense a] -> [Delta a]
+toDeltas :: [Expense a] -> V.Vector (Delta a)
 toDeltas expenses =
   let n     = length expenses
       total = sum (map exp_amount expenses)
       avg   = total / fromIntegral n
-  in map (fromExpense avg) expenses
+  in V.fromList (map (fromExpense avg) expenses)
 
 
 -------------------------------------------------------------------------------
@@ -64,10 +75,10 @@ toDeltas expenses =
 -- Note: in some cases, this algorithm will generate transfers that have
 -- an amount lower than the given epsilon, for instance, when transfering from
 -- many accounts with small deficiencies to a single account with a large
--- deficiency.
+-- deficiency. 
 --
--- Note: A related concept to @e@-balance is @d@-defiency, which is defined as
--- follows:
+-- Note: A related concept to @e@-balance is @d@-deficiency, which is defined
+-- as follows:
 -- A set of expenses @E@ is @d@-deficient (@d@ > 0) if
 --
 -- > forall e in |e - avg E| < d where avg E = (sum E)/|E|
@@ -92,32 +103,44 @@ toDeltas expenses =
 -- Given a list of deltas (where every payer must be unique), create a list
 -- of transfers, such that the result of applying those transfers to the deltas
 -- is e-balanced (see 'Types.balanced').
-balanceDelta :: Eq a => [Delta a] -> Double -> [Transfer a]
+balanceDelta :: Eq a => V.Vector (Delta a) -> Double -> ST s [Transfer a]
 balanceDelta deltas0 !epsilon
-  | null deltas0 = []
-  | otherwise   =
-      let loop !transfers deltas =
-            let payer = minimumBy (compare `on` deltaAmount) deltas
-                payee = maximumBy (compare `on` deltaAmount) deltas
-            in if (deltaAmount payee - deltaAmount payer) < epsilon then
-                 transfers
-               else
-                 let amount =
-                       min (abs (deltaAmount payee)) (abs (deltaAmount payee))
-                     transfer =
-                       MkTransfer
-                       {
-                         trans_from   = deltaAccount payer,
-                         trans_to     = deltaAccount payee,
-                         trans_amount = amount
-                       }
-                     newDeltas = map (executeTransfer transfer) deltas
-                 in loop (transfer:transfers) newDeltas
-      in loop [] deltas0
+  | V.length deltas0 == 0 = return []
+  | otherwise = do
+      deltas <- V.thaw deltas0
+      let minMax !i !iMin !iMax !dMin !dMax
+            | i == MV.length deltas = return (iMin,iMax,dMin,dMax)
+            | otherwise = do
+                d <- MV.read deltas i
+                if | deltaAmount d < deltaAmount dMin
+                     -> minMax (i+1) i iMax d dMax
+                   | deltaAmount d > deltaAmount dMax
+                     -> minMax (i+1) iMin i dMin d
+                   | otherwise
+                     -> minMax (i+1) iMin iMax dMin dMax
+      let loop !transfers = do
+            d <- MV.read deltas 0
+            (payerIndex,payeeIndex,payer,payee) <- minMax 1 0 0 d d
+            if (deltaAmount payee - deltaAmount payer) < epsilon
+              then return transfers
+              else do
+                let amount =
+                      min (abs (deltaAmount payee)) (abs (deltaAmount payer))
+                    transfer =
+                      MkTransfer
+                      {
+                        trans_from   = deltaAccount payer,
+                        trans_to     = deltaAccount payee,
+                        trans_amount = amount
+                      }
+                MV.modify deltas (executeTransfer transfer) payerIndex
+                MV.modify deltas (executeTransfer transfer) payeeIndex
+                loop (transfer:transfers)
 
+      loop []
 -- | Create a list of transfers to e-balance a list of expenses.
 -- Given a list of expenses (where every payer must be unique), create a list
 -- of transfers, such that the result of applying those transfers to the deltas
 -- is e-balanced (see 'Types.balanced').
 balance :: Eq a => [Expense a] -> Double -> [Transfer a]
-balance = balanceDelta . toDeltas
+balance expenses eps = runST (balanceDelta (toDeltas expenses) eps)
