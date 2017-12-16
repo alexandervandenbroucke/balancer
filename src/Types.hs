@@ -23,11 +23,13 @@ import Control.Monad (forM_)
 -------------------------------------------------------------------------------
 -- Expenses
 
+-- | An expense is an amount of money (a 'Double') expended by someone (of type
+-- @a@).
 data Expense a =
   MkExpense
   {
-    exp_payer  :: a,
-    exp_amount :: Double
+    exp_payer  :: !a,
+    exp_amount :: !Double
   }
   deriving (Functor,Show,Eq,Ord)
 
@@ -54,6 +56,8 @@ balanced epsilon expenses =
 -------------------------------------------------------------------------------
 -- Transfers
 
+-- | A transfer transfers an amount of money ('Double') from a person of type
+-- @a@ to another person of type @a@.
 data Transfer a =
   MkTransfer
   {
@@ -63,7 +67,7 @@ data Transfer a =
   }
   deriving (Functor,Show)
 
-
+-- | Pretty print a list of @'Transfer' 'String']@.
 prettyTransfers :: [Transfer String] -> IO ()
 prettyTransfers transfers = do
   forM_ transfers $ \(MkTransfer from to amount) ->
@@ -98,3 +102,5 @@ instance Eq a => Transferable a (Expense a) where
     | from == payer = MkExpense payer (expense + amount)
     | to   == payer = MkExpense payer (expense - amount)
     | otherwise     = e
+  {-# INLINEABLE executeTransfer #-}
+  {-# SPECIALISE executeTransfer :: Transfer String -> Expense String -> Expense String #-}
