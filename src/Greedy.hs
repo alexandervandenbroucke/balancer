@@ -1,4 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE BangPatterns #-}
 {- | Greedy algorithm for balancing a list of expenses.
 -}
 module Greedy (
@@ -92,22 +93,27 @@ toDeltas expenses =
 -- of transfers, such that the result of applying those transfers to the deltas
 -- is e-balanced (see 'Types.balanced').
 balanceDelta :: Eq a => [Delta a] -> Double -> [Transfer a]
-balanceDelta deltas epsilon =
-  let payer = minimumBy (compare `on` deltaAmount) deltas
-      payee = maximumBy (compare `on` deltaAmount) deltas
-  in if (deltaAmount payee - deltaAmount payer) < epsilon then
-       []
-     else
-       let amount = min (abs (deltaAmount payee)) (abs (deltaAmount payee))
-           transfer =
-             MkTransfer
-             {
-               trans_from   = deltaAccount payer,
-               trans_to     = deltaAccount payee,
-               trans_amount = amount
-             }
-           newDeltas = map (executeTransfer transfer) deltas
-       in transfer:balanceDelta newDeltas epsilon
+balanceDelta deltas0 !epsilon
+  | null deltas0 = []
+  | otherwise   =
+      let loop !transfers deltas =
+            let payer = minimumBy (compare `on` deltaAmount) deltas
+                payee = maximumBy (compare `on` deltaAmount) deltas
+            in if (deltaAmount payee - deltaAmount payer) < epsilon then
+                 transfers
+               else
+                 let amount =
+                       min (abs (deltaAmount payee)) (abs (deltaAmount payee))
+                     transfer =
+                       MkTransfer
+                       {
+                         trans_from   = deltaAccount payer,
+                         trans_to     = deltaAccount payee,
+                         trans_amount = amount
+                       }
+                     newDeltas = map (executeTransfer transfer) deltas
+                 in loop (transfer:transfers) newDeltas
+      in loop [] deltas0
 
 -- | Create a list of transfers to e-balance a list of expenses.
 -- Given a list of expenses (where every payer must be unique), create a list
