@@ -2,7 +2,11 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE MultiWayIf #-}
 
-{- | Greedy algorithm for balancing a list of expenses. -}
+{- |
+Module:      Greedy
+Description: Greedy algorithm for balancing a list of expenses.
+Maintainer:  alexander.vandenbroucke@gmail.com
+-}
 
 module Greedy (
   -- * Greedy Algorithm

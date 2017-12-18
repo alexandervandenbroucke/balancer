@@ -3,6 +3,29 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances      #-}
 
+{- |
+Module:      Types
+Description: Common datatypes and utility functions for expense balancing.
+Maintainer:  alexander.vandenbroucke@gmail.com
+
+This module defines two types:
+
+ * 'Expense': a record of a certain amount of money having been paid by a
+   particular person, and
+ * 'Transfer': a transfer of a certain amount of money from a person to another
+   person.
+
+Both these types are polymorphic in the type of the person.
+Lists of 'Expense's can be 'aggregate'd or they can be epsilon-balanced (see
+'balanced').
+
+Transfers can be executed upon members of the 'Transferable' class. Naturally,
+'Expense' is an instance of this class.
+__Caution__: When a person /transfers/ money to another person, the first
+person's expenses increase, while the second person's expenses decrease.
+
+-}
+
 module Types (
   -- * Expenses
   Expense(MkExpense,exp_amount,exp_payer),
@@ -87,16 +110,16 @@ class Transferable a t | t -> a where
 executeTransfers :: Transferable a t => [Transfer a] -> t -> t
 executeTransfers transfers expenses = foldr executeTransfer expenses transfers
 
+-- | The result of executing a 'Transfer' on a 'Transferable' is the
+-- following:
+--   1. If the payer and the payee of the transfer are identical, the
+--      expense unchanged.
+--   2. If the payer of the transfer is the payer of the expense, the
+--      expense amount increases by the transfer amount.
+--   3. If the payee of the transfer is the payer of the expense, the
+--      expense is reduced by the transfer amount.
+--   4. Otherwise, the expense is unchanged.
 instance Eq a => Transferable a (Expense a) where
-  -- | The result of executing a 'Transfer' on a 'Transferable' is the
-  -- following:
-  --   1. If the payer and the payee of the transfer are identical, the
-  --      expense unchanged.
-  --   2. If the payer of the transfer is the payer of the expense, the
-  --      expense amount increases by the transfer amount.
-  --   3. If the payee of the transfer is the payer of the expense, the
-  --      expense is reduced by the transfer amount.
-  --   4. Otherwise, the expense is unchanged.
   executeTransfer (MkTransfer from to amount) e@(MkExpense payer expense)
     | from == to    = e
     | from == payer = MkExpense payer (expense + amount)
