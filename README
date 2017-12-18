@@ -1,0 +1,41 @@
+# Expense Balancing
+
+
+A code experiment to equalise the balances of a group of people.
+
+## Compiling and running
+
+
+Using the stack tool (https://docs.haskellstack.org/en/stable/README/):
+
+```
+$ stack setup
+$ stack build
+```
+
+## General Usage
+
+The most likely use case for this project is a library for your own program,
+or directly from GHCi (use `stack ghci`).
+
+## Example Program
+
+* Using the flow-network based algorithm:
+
+  ```
+  $ stack exec balancer-example --- 100
+  ```
+
+* Using the greedy algorithm (a lot faster):
+
+  ```
+  $ stack exec balancer-example --- greedy 1000
+  ```
+
+* The following version also uses the greedy algorithm, but does not print
+  output (mainly for performance testing).
+
+  ```
+  $ stack exec balancer-example --- noprint 4000
+  ```
+
