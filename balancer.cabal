@@ -19,7 +19,7 @@ library
   exposed-modules:     Balancer, Flow, Greedy, Types
   -- other-modules:       
   other-extensions:    GeneralizedNewtypeDeriving
-  build-depends:       base >=4.8 && <4.10,
+  build-depends:       base >=4.8 && <4.11,
                        vector,
                        containers
   hs-source-dirs:      src
@@ -29,7 +29,7 @@ library
 Test-Suite balancer-tests
   type:             exitcode-stdio-1.0
   main-is:          balancer-tests.hs
-  build-depends:    base >= 4.8 && < 4.10,
+  build-depends:    base >= 4.8 && < 4.11,
                     hspec,
                     balancer >= 0.1
   hs-source-dirs:   tests
@@ -38,7 +38,7 @@ Test-Suite balancer-tests
 Test-Suite flow-tests
   type:             exitcode-stdio-1.0
   main-is:          flow-tests.hs
-  build-depends:    base >= 4.8 && < 4.10,
+  build-depends:    base >= 4.8 && < 4.11,
                     hspec,
                     balancer >= 0.1
   hs-source-dirs:   tests
@@ -46,7 +46,7 @@ Test-Suite flow-tests
 
 executable balancer-example
   main-is:          balancer-example.hs
-  build-depends:    base >= 4.8 && < 4.10,
+  build-depends:    base >= 4.8 && < 4.11,
                     balancer >= 0.1,
                     deepseq
   hs-source-dirs:   example
