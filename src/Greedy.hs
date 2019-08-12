@@ -1,6 +1,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 {- |
 Module:      Greedy
@@ -19,7 +21,9 @@ import Types (
   Transferable(executeTransfer))
 
 import           Control.Monad.ST
+import           Data.Ord (Down(Down), comparing)
 import qualified Data.Vector as V
+import qualified Data.Vector.Algorithms.Heap as H
 import qualified Data.Vector.Mutable as MV
 
 -------------------------------------------------------------------------------
@@ -103,33 +107,65 @@ toDeltas expenses =
 -- @e@-balanced iff @[e' - avg E | e' <- E]@ is @e@-balanced.
 
 
+-- | In-place partition a modifiable of deltas into non-positive and positive
+-- deltas.
+--
+-- Partitioning is O(n).
+partition
+  :: MV.MVector s (Delta a)
+  -> ST s (MV.MVector s (Delta a), MV.MVector s (Delta a))
+partition deltas = go 0 (MV.length deltas) where
+  -- next and posPart are indices dividing the array into 3 regions:
+  --
+  -- > --------------------------------------
+  -- > |  <= 0     | unknown      | > 0     |
+  -- > --------------------------------------
+  -- > 0            ^              ^         L
+  -- >              |              |
+  -- >              next           posPart
+  --
+  -- Thus the following invariants are satisfied:
+  -- 
+  -- > deltas[i] <= 0                   if i in [0,next)
+  -- > deltas[i] is not yet partitioned if i in [next,pos)
+  -- > deltas[i] > 0                    if i in [pos,L)
+  -- > 0 <= next < posPart <= L
+  go !next !posPart
+    | next < posPart = do
+        MkDelta e <- MV.read deltas next
+        if exp_amount e <= 0 then go (next+1) posPart else do
+          MV.swap deltas next (posPart-1)
+          go next (posPart - 1)
+    | otherwise = return $
+        let negativePartition = MV.slice 0 posPart deltas
+            positivePartition =
+              MV.slice posPart (MV.length deltas - posPart) deltas
+        in (negativePartition,positivePartition)
+
+
 -- | Create a list of transfers to e-balance a list of deltas.
 -- Given a list of deltas (where every payer must be unique), create a list
 -- of transfers, such that the result of applying those transfers to the deltas
 -- is e-balanced (see 'Types.balanced').
+--
+-- Balancing is O(n log n)
 balanceDelta :: Eq a => V.Vector (Delta a) -> Double -> ST s [Transfer a]
 balanceDelta deltas0 !epsilon
   | V.length deltas0 == 0 = return []
   | otherwise = do
       deltas <- V.thaw deltas0
-      let minMax !i !iMin !iMax !dMin !dMax
-            | i == MV.length deltas = return (iMin,iMax,dMin,dMax)
-            | otherwise = do
-                d <- MV.read deltas i
-                if | deltaAmount d < deltaAmount dMin
-                     -> minMax (i+1) i iMax d dMax
-                   | deltaAmount d > deltaAmount dMax
-                     -> minMax (i+1) iMin i dMin d
-                   | otherwise
-                     -> minMax (i+1) iMin iMax dMin dMax
+      (nonPos,pos) <- partition deltas
+      minDelta <- mkMinHeap nonPos
+      maxDelta <- mkMaxHeap pos
       let loop !transfers = do
             d <- MV.read deltas 0
-            (payerIndex,payeeIndex,payer,payee) <- minMax 1 0 0 d d
+            payer <- findMin minDelta
+            payee <- findMax maxDelta
             if (deltaAmount payee - deltaAmount payer) < epsilon
               then return transfers
               else do
                 let amount =
-                      min (abs (deltaAmount payee)) (abs (deltaAmount payer))
+                      min (deltaAmount payee) (negate (deltaAmount payer))
                     transfer =
                       MkTransfer
                       {
@@ -137,14 +173,89 @@ balanceDelta deltas0 !epsilon
                         trans_to     = deltaAccount payee,
                         trans_amount = amount
                       }
-                MV.modify deltas (executeTransfer transfer) payerIndex
-                MV.modify deltas (executeTransfer transfer) payeeIndex
+                transferMin transfer minDelta
+                transferMax transfer maxDelta
                 loop (transfer:transfers)
 
       loop []
+
+
 -- | Create a list of transfers to e-balance a list of expenses.
 -- Given a list of expenses (where every payer must be unique), create a list
 -- of transfers, such that the result of applying those transfers to the deltas
 -- is e-balanced (see 'Types.balanced').
+--
+-- This algorithm is O(n log n)
 balance :: Eq a => [Expense a] -> Double -> [Transfer a]
 balance expenses eps = runST (balanceDelta (toDeltas expenses) eps)
+
+-------------------------------------------------------------------------------
+-- Heap datastructures
+
+-- A min heap of 'Delta's
+newtype MinHeap s a = MkMinHeap {
+  unMinHeap :: MV.MVector s (Delta a)
+}
+
+-- A max heap of 'Delta's
+newtype MaxHeap s a = MkMaxHeap {
+  unMaxHeap :: MV.MVector s (Delta a)
+}
+
+-- | Compare deltas by the smallest amount
+comparingMin :: Delta a -> Delta a -> Ordering
+comparingMin = comparing (Down . deltaAmount)
+{-# INLINEABLE comparingMin #-}
+
+-- | Compare deltas by the largest amount
+comparingMax :: Delta a -> Delta a -> Ordering
+comparingMax = comparing deltaAmount
+{-# INLINEABLE comparingMax #-}
+
+-- | Create a min heap.
+--
+-- O(n)
+mkMinHeap :: MV.MVector s (Delta a) -> ST s (MinHeap s a)
+mkMinHeap mv = do
+  H.heapify comparingMin mv 0 (MV.length mv)
+  return (MkMinHeap mv)
+{-# INLINEABLE mkMinHeap #-}
+
+-- | Create a max heap
+--
+-- O(n)
+mkMaxHeap :: MV.MVector s (Delta a) -> ST s (MaxHeap s a)
+mkMaxHeap mv = do
+  H.heapify comparingMax mv 0 (MV.length mv)
+  return (MkMaxHeap mv)
+{-# INLINEABLE mkMaxHeap #-}
+
+-- | Find the delta with the smallest amount
+--
+-- O(1)
+findMin :: MinHeap s a -> ST s (Delta a)
+findMin (MkMinHeap mv) = MV.read mv 0
+{-# INLINEABLE findMin #-}
+
+-- | Find the delta with the largest amount
+--
+-- O(1)
+findMax :: MaxHeap s a -> ST s (Delta a)
+findMax (MkMaxHeap mv) = MV.read mv 0
+{-# INLINEABLE findMax #-}
+
+-- | Apply the transfer to the delta with the smallest amount.
+--
+-- O(n log n), since it has to preserve the heap property.
+transferMin :: Eq a => Transfer a -> MinHeap s a -> ST s ()
+transferMin t (MkMinHeap mv) = do
+  MV.modify mv (executeTransfer t) 0
+  H.popTo comparingMin mv 0 (MV.length mv) 0
+
+-- | Apply the transfer to the delta with the largest amount.
+--
+-- O(n log n), since it has to preserve the heap property.
+transferMax :: Eq a => Transfer a -> MaxHeap s a -> ST s ()
+transferMax t (MkMaxHeap mv) = do
+  MV.modify mv (executeTransfer t) 0
+  H.popTo comparingMax mv 0 (MV.length mv) 0
