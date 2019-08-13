@@ -2,6 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE UndecidableInstances   #-}
 
 {- |
 Module:      Types
@@ -127,3 +128,8 @@ instance Eq a => Transferable a (Expense a) where
     | otherwise     = e
   {-# INLINEABLE executeTransfer #-}
   {-# SPECIALISE executeTransfer :: Transfer String -> Expense String -> Expense String #-}
+
+
+-- | Apply a 'Transfer' to a list of 'Transferable's.
+instance Transferable a t => Transferable a [t] where
+  executeTransfer transfer = map (executeTransfer transfer)

@@ -52,4 +52,11 @@ executable balancer-example
                     deepseq
   hs-source-dirs:   example
   default-language: Haskell2010
-  ghc-options:      -O2
+
+executable balancer-csv
+  main-is:          balancer-csv.hs
+  build-depends:    base >= 4.8 && < 4.13,
+                    balancer >= 0.1,
+                    readcsv
+  hs-source-dirs:   app/
+  default-language: Haskell2010
