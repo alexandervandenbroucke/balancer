@@ -39,9 +39,9 @@ or directly from GHCi (use `stack ghci`).
   $ cabal new-run balancer-example -- noprint 4000
   ```
 
-## Balancing Expenses for A Bachelor's Party
+## Balancing Expenses for a Stag's Night
 
-In the app/ directory, you can also find a more in-depth real-life example.
+In the app/ directory, you can also find a more realistic real-life example.
 This program to generate balancing transfers from expenses read in from
 a CSV file.
 
